@@ -1,0 +1,33 @@
+# DSIL .gitignore
+
+# Environment & Credentials
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+dist/
+build/
+*.egg-info/
+
+# Reports
+reports/
+report-*.md
+report-*.json
+report-*.html
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

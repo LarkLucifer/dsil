@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DSIL Report</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22c55e;
+      --critical: #ef4444;
+      --high: #f97316;
+      --medium: #eab308;
+      --low: #38bdf8;
+      --info: #a78bfa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(160deg, #0b1020 0%, #111827 100%);
+      color: var(--text);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .card h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .value {
+      font-size: 22px;
+      font-weight: 600;
+    }
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #1f2937;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .bar > span {
+      display: block;
+      height: 100%;
+    }
+    .findings {
+      display: grid;
+      gap: 16px;
+    }
+    .finding {
+      border-left: 4px solid var(--accent);
+    }
+    .finding h4 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      margin-left: 8px;
+    }
+    .pill.critical { background: var(--critical); }
+    .pill.high { background: var(--high); }
+    .pill.medium { background: var(--medium); }
+    .pill.low { background: var(--low); }
+    .pill.info { background: var(--info); }
+    pre {
+      background: #0b1020;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      color: #cbd5f5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <div class="title">DSIL Security Report</div>
+        <div class="meta">
+          Target: {{ report.target }}<br />
+          Mode: {{ report.mode }}<br />
+          Started: {{ report.started_at }}<br />
+          Finished: {{ report.finished_at }}<br />
+          Duration: {{ "%.2f"|format(report.duration_seconds) }}s
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Verified Findings</h3>
+        <div class="value">{{ findings|length }}</div>
+      </div>
+      <div class="card">
+        <h3>Critical</h3>
+        <div class="value">{{ severity_counts.critical }}</div>
+        <div class="bar"><span style="width: {{ (severity_counts.critical / (findings|length or 1) * 100) | round(0) }}%; background: var(--critical);"></span></div>
+      </div>
+      <div class="card">
+        <h3>High</h3>
+        <div class="value">{{ severity_counts.high }}</div>
+        <div class="bar"><span style="width: {{ (severity_counts.high / (findings|length or 1) * 100) | round(0) }}%; background: var(--high);"></span></div>
+      </div>
+      <div class="card">
+        <h3>Medium</h3>
+        <div class="value">{{ severity_counts.medium }}</div>
+        <div class="bar"><span style="width: {{ (severity_counts.medium / (findings|length or 1) * 100) | round(0) }}%; background: var(--medium);"></span></div>
+      </div>
+      <div class="card">
+        <h3>Low</h3>
+        <div class="value">{{ severity_counts.low }}</div>
+        <div class="bar"><span style="width: {{ (severity_counts.low / (findings|length or 1) * 100) | round(0) }}%; background: var(--low);"></span></div>
+      </div>
+      <div class="card">
+        <h3>Info</h3>
+        <div class="value">{{ severity_counts.info }}</div>
+        <div class="bar"><span style="width: {{ (severity_counts.info / (findings|length or 1) * 100) | round(0) }}%; background: var(--info);"></span></div>
+      </div>
+    </div>
+
+    <div class="findings">
+      {% if not findings %}
+        <div class="card">No verified findings.</div>
+      {% endif %}
+      {% for f in findings %}
+        <div class="card finding">
+          <h4>{{ f.name }} <span class="pill {{ f.severity }}">{{ f.severity|upper }}</span></h4>
+          <div class="meta">
+            ID: {{ f.id }} | URL: {{ f.url }} | Confidence: {{ "%.2f"|format(f.confidence) }}
+          </div>
+          <h5>Summary</h5>
+          <p>This issue was identified during automated scanning and verified in a follow-up check.</p>
+          <h5>Evidence</h5>
+          <pre>{{ f.evidence | tojson(indent=2) }}</pre>
+          <h5>Remediation</h5>
+          <p>{{ "Validate user-controlled keys and avoid unsafe object merges." if f.id == "PP-001" else "Remediate the issue using secure coding best practices." }}</p>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>
