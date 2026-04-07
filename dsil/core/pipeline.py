@@ -107,6 +107,8 @@ class Pipeline:
             context=self.context,
             scope=self.scope,
             dedup=self.dedup,
+            max_pages=self.context.max_pages,
+            concurrency=self.context.concurrency,
         )
         results = await crawler.crawl(seeds)
         self.discovered_urls = [r.url for r in results]
@@ -171,6 +173,7 @@ class Pipeline:
         executor = TierExecutor(
             context=self.context,
             urls=self.discovered_urls,
+            concurrency=self.context.concurrency,
         )
         tier_findings = await executor.run()
         self.findings.extend(tier_findings)

@@ -48,30 +48,49 @@ class TierExecutor:
         if not self.urls:
             return []
 
-        sem = asyncio.Semaphore(max(1, self.concurrency))
+        # Worker pool pattern to prevent memory explosion with millions of tasks
+        queue: asyncio.Queue[tuple[type[BaseScanner], str]] = asyncio.Queue()
+        for scanner_cls in scanners:
+            for url in self.urls:
+                queue.put_nowait((scanner_cls, url))
 
-        async def run_one(scanner_cls: type[BaseScanner], url: str) -> list[Vulnerability]:
-            async with sem:
+        results: list[Vulnerability] = []
+        results_lock = asyncio.Lock()
+
+        async def worker():
+            while True:
                 try:
-                    scanner = scanner_cls()
-                    return await scanner.scan(url, self.context)
-                except asyncio.TimeoutError:
-                    logger.warning("Scanner timeout: %s on %s", scanner_cls.__name__, url)
-                    return []
-                except Exception:
-                    logger.exception("Scanner failed: %s on %s", scanner_cls.__name__, url)
-                    return []
+                    try:
+                        scanner_cls, url = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
 
-        tasks = [
-            asyncio.create_task(run_one(scanner_cls, url))
-            for url in self.urls
-            for scanner_cls in scanners
+                    try:
+                        scanner = scanner_cls()
+                        findings = await scanner.scan(url, self.context)
+                        async with results_lock:
+                            results.extend(findings)
+                    except asyncio.TimeoutError:
+                        logger.warning("Scanner timeout: %s on %s", scanner_cls.__name__, url)
+                    except Exception:
+                        logger.exception("Scanner failed: %s on %s", scanner_cls.__name__, url)
+                    finally:
+                        queue.task_done()
+                except Exception:
+                    logger.exception("Worker error")
+                    break
+
+        # Create workers up to concurrency limit
+        total_tasks = len(scanners) * len(self.urls)
+        worker_count = min(total_tasks, self.concurrency)
+        
+        workers = [
+            asyncio.create_task(worker())
+            for _ in range(max(1, worker_count))
         ]
 
-        results = await asyncio.gather(*tasks, return_exceptions=False)
+        if workers:
+            await asyncio.gather(*workers)
+        
+        return results
 
-        aggregated: list[Vulnerability] = []
-        for batch in results:
-            aggregated.extend(batch)
-
-        return aggregated

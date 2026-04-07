@@ -149,8 +149,15 @@ class AsyncCrawler:
 
         return links
 
+    MAX_TOTAL_RECON_URLS = 500000
+
     async def _enqueue_if_valid(self, queue: asyncio.Queue[str], url: str) -> None:
+        # Prevent memory exhaustion by capping total discovered URLs
+        if self.dedup.count >= self.MAX_TOTAL_RECON_URLS:
+            return
+
         parsed = urlparse(url)
+
         if parsed.scheme not in {"http", "https"}:
             return
 

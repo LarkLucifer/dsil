@@ -34,10 +34,15 @@ class ScanContext:
     agent: Optional[AgentInterface] = None
     oob_session: Optional["InteractSession"] = None
 
+    # Configuration limits for resource management
+    max_pages: int = 200
+    concurrency: int = 20
+
     # Circuit Breaker tracking
     consecutive_errors: int = 0
     last_error_time: float = 0.0
     is_cooling_down: bool = False
+
 
     def record_status(self, status: int) -> None:
         """

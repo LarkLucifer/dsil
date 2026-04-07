@@ -18,19 +18,15 @@ class KatanaSource:
         self.target = target
 
     async def fetch_urls(self) -> list[str]:
-        # Menjalankan katana dengan subprocess
-        cmd = [
-            "katana",
-            "-u",
-            self.target,
-            "-jc",
-            "-kf",
-            "-d",
-            "3",
-            "-j",
-            "-silent",
-            "-nc",
-        ]
+        """
+        Fetch URLs using Katana with a fallback mechanism for robustness.
+        """
+        # Baseline flags that are most likely to work across versions
+        base_cmd = ["katana", "-u", self.target, "-j", "-silent", "-nc"]
+        # Advanced flags that might cause Code 2 if dependencies (headless) are missing
+        advanced_flags = ["-jc", "-kf", "-d", "3"]
+        
+        cmd = base_cmd + advanced_flags
 
         logger.info("KatanaSource: starting scan for %s", self.target)
         try:
@@ -39,14 +35,27 @@ class KatanaSource:
                     *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
             except FileNotFoundError:
-                logger.error("Katana not found. Ensure it is installed via 'go install' or apt.")
+                logger.error("Katana binary not found in PATH.")
                 return []
 
             stdout, stderr = await process.communicate()
 
             if process.returncode != 0:
-                logger.error("Katana failed (code %d): %s", process.returncode, stderr.decode())
-                return []
+                err_out = stderr.decode().strip()
+                logger.warning("Katana advanced scan failed (code %d): %s", process.returncode, err_out)
+                
+                # Code 2 often means flag error or missing headless browser
+                if process.returncode == 2 or "headless" in err_out.lower():
+                    logger.info("KatanaSource: retrying with safe base flags...")
+                    process = await asyncio.create_subprocess_exec(
+                        *base_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await process.communicate()
+                    if process.returncode != 0:
+                        logger.error("Katana base scan also failed (code %d): %s", process.returncode, stderr.decode())
+                        return []
+                else:
+                    return []
 
             urls = []
             for line in stdout.decode().splitlines():
@@ -54,17 +63,24 @@ class KatanaSource:
                     continue
                 try:
                     data = json.loads(line)
-                    endpoint = data.get("request", {}).get("endpoint", "")
-                    if endpoint:
-                        urls.append(endpoint)
+                    # Katana JSON output can be either a direct URL string or a JSON object
+                    if isinstance(data, dict):
+                        endpoint = data.get("request", {}).get("endpoint") or data.get("url", "")
+                        if endpoint:
+                            urls.append(endpoint)
+                    elif isinstance(data, str):
+                        urls.append(data)
                 except json.JSONDecodeError:
-                    continue
+                    # If not JSON, try treating the line as a raw URL if it's not silent
+                    if line.startswith("http"):
+                        urls.append(line.strip())
 
             logger.info("KatanaSource: discovered %d endpoints", len(urls))
             return list(set(urls))
         except Exception as e:
-            logger.error("KatanaSource error: %s", e)
+            logger.exception("KatanaSource unexpected error")
             return []
+
 
 
 async def _fetch_text(
