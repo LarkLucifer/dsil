@@ -58,17 +58,35 @@ dsil --target https://example.com poc
 dsil --target https://example.com scan --verbose --enable-ai
 ```
 
-### 🚅 Optimized for VPS/Low-RAM Machines
-If you encouter memory pressure or want to scan massive targets:
+### 🚅 Resource Optimization (Local vs VPS)
+DSIL now supports execution profiles to balance performance and system stability.
+
+| Profile | Target Env | Concurrency | Max Pages | URL Cap | Jitter |
+|:---|:---|:---:|:---:|:---:|:---:|
+| `local` (Default) | Home PC / Linux Desktop | 10 | 200 | 100k | Normal |
+| `vps` | High-RAM VPS / Dedicated | 50 | 2000 | 1M | Low |
+
+#### Run with Local Profile (Safe-by-Default)
 ```bash
-# Limit crawl depth and parallel tasks
-dsil --target https://massive-site.com scan --max-pages 500 --concurrency 10
+dsil --target https://example.com --profile local scan
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--max-pages` | 200 | Maximum unique pages to crawl during discovery. |
-| `--concurrency` | 20 | Number of parallel scanner workers. Reduce for low-RAM systems. |
+#### Run with Brutal Mode (VPS)
+```bash
+dsil --target https://example.com --profile vps scan
+```
+
+#### Custom Overrides
+You can still manually override profile defaults:
+```bash
+dsil --target https://example.com --profile vps --concurrency 100 scan
+```
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--profile` | `-p` | `local` | Execution profile: `local` or `vps`. |
+| `--max-pages` | | *Profile* | Maximum unique pages to crawl during discovery. |
+| `--concurrency` | | *Profile* | Number of parallel scanner workers. |
 
 ---
 
