@@ -20,6 +20,7 @@ from .evasion import HeaderFactory, random_delay
 from ..discovery.crawler import AsyncCrawler
 from ..discovery.dedup import DedupStore
 from ..discovery.sources import fetch_robots_txt, fetch_sitemap_urls, KatanaSource
+from ..discovery.subdomains import SubfinderSource
 from ..scanner.executor import TierExecutor
 from ..scanner.base import Vulnerability
 from ..scanner.tiers import tier0, tier1, tier2, tier3, tier4, tier5  # noqa: F401
@@ -83,9 +84,19 @@ class Pipeline:
     async def _discovery(self) -> None:
         logger.debug("Discovery: target=%s", self.context.target)
 
+        # Step 1.1: Subdomain Recon (Subfinder)
+        subfinder = SubfinderSource(self.context.target)
+        discovered_subdomains = await subfinder.fetch_subdomains()
+        
+        # Ensure all discovered subdomains are in scope
+        for sub in discovered_subdomains:
+            self.scope.add_to_scope(f"http://{sub}")
+            self.scope.add_to_scope(f"https://{sub}")
+
         timeout = aiohttp.ClientTimeout(total=20)
         headers = HeaderFactory.get_headers()
 
+        sitemap_urls = []
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             await self._check_circuit_breaker()
             robots_txt = await fetch_robots_txt(session, self.context.target)
@@ -97,9 +108,24 @@ class Pipeline:
             )
             await random_delay()
 
-        # Step 1.2: Katana Modern Crawling
-        katana = KatanaSource(self.context.target)
-        katana_urls = await katana.fetch_urls()
+        # Step 1.2: Katana Modern Crawling (on all subdomains)
+        katana_targets = list(set([self.context.target] + [f"https://{s}" for s in discovered_subdomains]))
+        katana_urls = []
+        
+        logger.info("Discovery: running Katana on %d targets", len(katana_targets))
+        
+        # Run Katana with limited concurrency to avoid overwhelming the system
+        sem = asyncio.Semaphore(3)
+        
+        async def run_katana(target: str):
+            async with sem:
+                k = KatanaSource(target)
+                return await k.fetch_urls()
+
+        tasks = [run_katana(t) for t in katana_targets]
+        results_list = await asyncio.gather(*tasks)
+        for r in results_list:
+            katana_urls.extend(r)
         
         seeds = list(set([self.context.target, *sitemap_urls, *katana_urls]))
 
@@ -114,9 +140,10 @@ class Pipeline:
         self.discovered_urls = [r.url for r in results]
 
         logger.info(
-            "Discovery complete: fetched=%d unique=%d (Katana found %d)",
+            "Discovery complete: fetched=%d unique=%d (Subfinder found %d subdomains, Katana found %d total URLs)",
             len(results),
             self.dedup.count,
+            len(discovered_subdomains),
             len(katana_urls),
         )
 

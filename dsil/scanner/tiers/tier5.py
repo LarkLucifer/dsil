@@ -31,6 +31,7 @@ class NucleiOrchestrator(BaseScanner):
             "nuclei",
             "-target", url,
             "-tags", "cve,exposed-panel,misconfig",
+            "-severity", "medium,high,critical",
             "-jsonl",
             "-silent",
             "-nc",

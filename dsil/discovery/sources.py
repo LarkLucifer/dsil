@@ -1,7 +1,8 @@
 import asyncio
 import json
 import logging
-from urllib.parse import urljoin
+from pathlib import Path
+from urllib.parse import urljoin, urlparse
 import xml.etree.ElementTree as ET
 
 import aiohttp
@@ -57,26 +58,58 @@ class KatanaSource:
                 else:
                     return []
 
-            urls = []
+            raw_urls = []
             for line in stdout.decode().splitlines():
-                if not line.strip():
+                line = line.strip()
+                if not line:
                     continue
                 try:
                     data = json.loads(line)
-                    # Katana JSON output can be either a direct URL string or a JSON object
                     if isinstance(data, dict):
                         endpoint = data.get("request", {}).get("endpoint") or data.get("url", "")
                         if endpoint:
-                            urls.append(endpoint)
+                            raw_urls.append(endpoint)
                     elif isinstance(data, str):
-                        urls.append(data)
+                        raw_urls.append(data)
                 except json.JSONDecodeError:
-                    # If not JSON, try treating the line as a raw URL if it's not silent
                     if line.startswith("http"):
-                        urls.append(line.strip())
+                        raw_urls.append(line)
 
-            logger.info("KatanaSource: discovered %d endpoints", len(urls))
-            return list(set(urls))
+            # --- SMART FILTERING ---
+            excluded_extensions = {
+                ".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico", ".webp",
+                ".css", ".js", ".woff", ".woff2", ".ttf", ".otf",
+                ".pdf", ".docx", ".xlsx", ".csv", ".mp4", ".avi", ".mov", ".wmv",
+                ".zip", ".tar.gz", ".tgz", ".rar", ".7z"
+            }
+            
+            filtered_urls = []
+            priority_urls = []
+
+            for url in set(raw_urls):
+                parsed = urlparse(url) if 'urlparse' in globals() else None
+                # Fallback if urlparse not imported (it's imported in this file now? let me check)
+                # Wait, I didn't see urlparse imported in sources.py, let me check the imports.
+                # Lines 1-7: from urllib.parse import urljoin
+                # I should add urlparse to the imports.
+                
+                ext = Path(url.split("?")[0]).suffix.lower()
+                if ext in excluded_extensions:
+                    continue
+                
+                if "?" in url:
+                    priority_urls.append(url)
+                else:
+                    filtered_urls.append(url)
+
+            # Combine priority first, then others
+            final_urls = priority_urls + filtered_urls
+            
+            logger.info(
+                "KatanaSource: discovered %d endpoints (%d prioritized, %d total filtered)", 
+                len(raw_urls), len(priority_urls), len(final_urls)
+            )
+            return final_urls
         except Exception as e:
             logger.exception("KatanaSource unexpected error")
             return []
