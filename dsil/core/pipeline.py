@@ -87,11 +87,18 @@ class Pipeline:
         # Step 1.1: Subdomain Recon (Subfinder)
         subfinder = SubfinderSource(self.context.target)
         discovered_subdomains = await subfinder.fetch_subdomains()
-        
-        # Ensure all discovered subdomains are in scope
-        for sub in discovered_subdomains:
-            self.scope.add_to_scope(f"http://{sub}")
-            self.scope.add_to_scope(f"https://{sub}")
+
+        # ScopeManager has no add_* method; extend allowed domains directly.
+        # This ensures subdomains discovered from a subdomain target are in-scope.
+        if discovered_subdomains:
+            normalized = [s.strip().lower() for s in discovered_subdomains if s]
+            if normalized:
+                # Preserve existing order, avoid duplicates.
+                combined = list(self.scope.actual_allowed_domains)
+                for host in normalized:
+                    if host not in combined:
+                        combined.append(host)
+                self.scope.actual_allowed_domains = tuple(combined)
 
         timeout = aiohttp.ClientTimeout(total=20)
         headers = HeaderFactory.get_headers()
